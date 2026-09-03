@@ -16,7 +16,6 @@
  */
 #include <M5Unified.h>
 #include <BLEDevice.h>
-#include <BLE2902.h>
 #include <math.h>
 
 static const int      GNSS_RX        = 18;
@@ -253,13 +252,13 @@ void setup() {
   BLEServer *server = BLEDevice::createServer();
   server->setCallbacks(new ServerCB());
 
+  // 2902 (CCCD) は明示的に足さない。NimBLE では NOTIFY を持つ
+  // キャラクタリスティックに自動で付くため、手動追加は deprecated。
   BLEService *svc = server->createService(SVC_UUID);
   chMain = svc->createCharacteristic(
       CH_MAIN, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
-  chMain->addDescriptor(new BLE2902());
   chTime = svc->createCharacteristic(
       CH_TIME, BLECharacteristic::PROPERTY_READ | BLECharacteristic::PROPERTY_NOTIFY);
-  chTime->addDescriptor(new BLE2902());
   svc->start();
 
   BLEAdvertising *adv = BLEDevice::getAdvertising();
