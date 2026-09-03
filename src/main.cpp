@@ -63,6 +63,7 @@ struct NavPvt {
 NavPvt   pvt      = {};
 bool     pvtFresh = false;   // 未送信の測位エポックが載っているか
 uint16_t navHDOP  = 0;       // NAV-DOP hDOP (0.01 単位), 0 = 不明
+uint16_t navVDOP  = 0;       // NAV-DOP vDOP (0.01 単位), 0 = 不明
 
 static inline void put24(uint8_t *p, uint32_t v) { p[0] = v >> 16; p[1] = v >> 8; p[2] = v; }
 static inline void put16(uint8_t *p, uint16_t v) { p[0] = v >> 8;  p[1] = v; }
@@ -191,6 +192,7 @@ static void handleUbx(uint8_t cls, uint8_t id, const uint8_t *b, uint16_t len) {
     pvt.headMot = rdI32(b + 64);
     pvtFresh    = true;
   } else if (cls == 0x01 && id == 0x04 && len >= 18) {   // NAV-DOP
+    navVDOP = rdU16(b + 10);
     navHDOP = rdU16(b + 12);
   }
 }
@@ -350,9 +352,10 @@ void sendEpoch() {
   }
   put16(pkt + 16, brg);
 
-  // NAV-DOP の hDOP は 1/100 単位。仕様は 1/10 単位なので 10 で割る
+  // NAV-DOP の hDOP / vDOP は 1/100 単位。仕様は 1/10 単位なので 10 で割る。
+  // 値が無い間は仕様どおり 0xFF (invalid) を送る。
   pkt[18] = (navHDOP == 0 || navHDOP > 2550) ? 0xFF : (uint8_t)(navHDOP / 10);
-  pkt[19] = 0xFF;
+  pkt[19] = (navVDOP == 0 || navVDOP > 2550) ? 0xFF : (uint8_t)(navVDOP / 10);
 
   chMain->setValue(pkt, 20);
   if (bleConnected) chMain->notify();
