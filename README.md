@@ -49,3 +49,7 @@ pio device monitor
 
 - [RaceChrono BLE DIY device API](https://github.com/aollin/racechrono-ble-diy-device)
 - u-blox M9 SPG Interface Description (UBX プロトコル仕様)
+
+## ライセンス
+
+[MIT License](LICENSE)
