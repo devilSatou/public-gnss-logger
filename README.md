@@ -45,6 +45,13 @@ pio device monitor
 3. `M5-RC-GPS` を選ぶ
 4. 接続すると画面が `BLE connected` に変わる
 
+初回接続時にスマホ側でペアリングの確認が出たら許可してください（PIN 入力は不要）。
+ペアリング情報はデバイスのフラッシュ (NVS) に保存されるので、2 回目以降や
+電源を入れ直したあとはペアリングなしで再接続できます。
+
+フラッシュを消去して書き込み直した場合はデバイス側の鍵が消えるので、
+スマホの Bluetooth 設定から `M5-RC-GPS` を一度削除してから接続し直してください。
+
 ## 参考
 
 - [RaceChrono BLE DIY device API](https://github.com/aollin/racechrono-ble-diy-device)

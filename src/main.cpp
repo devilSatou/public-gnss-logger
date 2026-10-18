@@ -249,6 +249,15 @@ void setup() {
   configureGnss();
 
   BLEDevice::init(DEVICE_NAME);
+
+  // ボンディングを有効にする。ライブラリ既定は sm_bonding = 0 なので、
+  // スマホ側がペアリングしても鍵がどちらにも残らず、再接続のたびに
+  // ペアリングからやり直しになる。ボンドすれば鍵は NVS に保存され
+  // (CONFIG_BT_NIMBLE_NVS_PERSIST)、再起動後も再ペアリング不要になる。
+  // IO cap は init() が NO_INPUT_OUTPUT にしているので、MITM なしの
+  // Just Works（PIN 入力なし）でペアリングされる。
+  BLESecurity::setAuthenticationMode(true, false, true);   // bond, mitm, sc
+
   BLEServer *server = BLEDevice::createServer();
   server->setCallbacks(new ServerCB());
 
