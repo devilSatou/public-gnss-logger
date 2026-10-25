@@ -231,6 +231,63 @@ static void feedByte(uint8_t b) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// BLE の接続まわりを USB シリアルに出す（pio device monitor で見る）
+// NimBLE のタスクから呼ばれるので、PC が読んでいなくても詰まらないよう
+// setup() で Serial の送信タイムアウトを 0 にしてある。
+// ---------------------------------------------------------------------------
+static struct ble_gap_event_listener gapListener;
+
+static void printAddr(const ble_addr_t &a) {
+  Serial.printf("%02x:%02x:%02x:%02x:%02x:%02x/t%u",
+                a.val[5], a.val[4], a.val[3], a.val[2], a.val[1], a.val[0], a.type);
+}
+
+static int logGapEvent(struct ble_gap_event *e, void *) {
+  const unsigned long t = millis();
+  switch (e->type) {
+    case BLE_GAP_EVENT_CONNECT: {
+      Serial.printf("[%lu] connect status=%d", t, e->connect.status);
+      struct ble_gap_conn_desc d;
+      if (e->connect.status == 0 && ble_gap_conn_find(e->connect.conn_handle, &d) == 0) {
+        Serial.print(" peer=");
+        printAddr(d.peer_ota_addr);
+      }
+      Serial.println();
+      break;
+    }
+    case BLE_GAP_EVENT_DISCONNECT:
+      Serial.printf("[%lu] disconnect reason=0x%x peer=", t, e->disconnect.reason);
+      printAddr(e->disconnect.conn.peer_ota_addr);
+      Serial.printf(" enc=%u bonded=%u\n", e->disconnect.conn.sec_state.encrypted,
+                    e->disconnect.conn.sec_state.bonded);
+      break;
+    case BLE_GAP_EVENT_ENC_CHANGE: {
+      Serial.printf("[%lu] enc_change status=%d", t, e->enc_change.status);
+      struct ble_gap_conn_desc d;
+      if (ble_gap_conn_find(e->enc_change.conn_handle, &d) == 0) {
+        Serial.printf(" enc=%u bonded=%u", d.sec_state.encrypted, d.sec_state.bonded);
+      }
+      Serial.println();
+      break;
+    }
+    case BLE_GAP_EVENT_REPEAT_PAIRING:
+      Serial.printf("[%lu] repeat_pairing\n", t);
+      break;
+    case BLE_GAP_EVENT_PASSKEY_ACTION:
+      Serial.printf("[%lu] passkey_action=%u\n", t, e->passkey.params.action);
+      break;
+    case BLE_GAP_EVENT_SUBSCRIBE:
+      Serial.printf("[%lu] subscribe handle=%u notify=%u\n", t, e->subscribe.attr_handle,
+                    e->subscribe.cur_notify);
+      break;
+    case BLE_GAP_EVENT_ADV_COMPLETE:
+      Serial.printf("[%lu] adv_complete reason=%d\n", t, e->adv_complete.reason);
+      break;
+  }
+  return 0;
+}
+
 class ServerCB : public BLEServerCallbacks {
   void onConnect(BLEServer *) override { bleConnected = true; }
   void onDisconnect(BLEServer *) override {
@@ -244,11 +301,28 @@ void setup() {
   M5.begin(cfg);
   M5.Display.setTextSize(2);
   M5.Display.println("booting...");
+  Serial.begin(115200);
+  Serial.setTxTimeoutMs(0);
 
   raiseGnssBaud();
   configureGnss();
 
   BLEDevice::init(DEVICE_NAME);
+  ble_gap_event_listener_register(&gapListener, logGapEvent, nullptr);
+
+  // スマホがペアリングしてきたら、こちらも鍵を NVS に残す（ボンディング）。
+  // ライブラリの既定は bonding=0 で、スマホだけが鍵を覚えてしまう。すると
+  // 再接続のたびにスマホが古い鍵で暗号化しようとして失敗し、切断を繰り返す
+  // （＝ペアリングからやり直し）。接続のたびにこちらからペアリングを
+  // 要求はしないので、ペアリングしないクライアントはこれまでどおり使える。
+  BLESecurity::setAuthenticationMode(true, false, true);   // bonding, mitm, sc
+  BLESecurity::setForceAuthentication(false);
+
+  int bonds = 0;
+  ble_store_util_count(BLE_STORE_OBJ_TYPE_PEER_SEC, &bonds);
+  Serial.printf("[%lu] ble addr %s bonds=%d\n", millis(),
+                BLEDevice::getAddress().toString().c_str(), bonds);
+
   BLEServer *server = BLEDevice::createServer();
   server->setCallbacks(new ServerCB());
 
@@ -380,6 +454,15 @@ void loop() {
   }
 
   const uint32_t now = millis();
+
+  // 切断後にアドバタイズが戻っているかを見るため、状態が変わったら出す
+  static int lastAdv = -1;
+  const int adv = ble_gap_adv_active();
+  if (adv != lastAdv) {
+    lastAdv = adv;
+    Serial.printf("[%lu] advertising %s\n", (unsigned long)now, adv ? "on" : "off");
+  }
+
   if (now - rateWindow >= 1000) {
     rateWindow = now;
     lastHz     = epochCount;
